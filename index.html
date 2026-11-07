@@ -416,12 +416,13 @@ function load() {
   return tidy(s);
 }
 // 引き継ぎコードなどから入った値を正しい形に直す（数の所に文字が入っていても画面に出さない）
-const num = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.floor(+v) : 0);
+const num = (v) => (typeof v === "number" || typeof v === "string") && Number.isFinite(+v) && +v >= 0 ? Math.floor(+v) : 0; // 数か文字のときだけ（{"toString":0} などで止めない）
 const okDate = (v) => { if (typeof v !== "string" || !/^\d{4}-\d\d-\d\d$/.test(v)) return false; const t = Date.parse(v + "T00:00:00Z"); return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v; };
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const okTag = (t) => { if (typeof t !== "string") return false; const m = t.match(/^([012]):([a-z]+)\|[a-z](\d{4}-\d\d-\d\d)[\w.:-]*$/); return !!m && has(G.BY, m[2]) && m[2] !== "tyo" && okDate(m[3]); };
 // 1回の問題の数（今日の5問・上級）。これと数の合わない記録は終えた日にしない
 const NQ = { d: G.dailyTags(EPOCH).length, h: G.hardTags(EPOCH).length };
+const NQL = { d: NQ.d, a: NQ.d, h: NQ.h, p: 5 }; // 途中経過の問題の数（とことんは決まっていない）
 function tidy(s) {
   s.ebest = num(s.ebest);
   for (const q of BOXES) if (!s[q] || typeof s[q] !== "object" || Array.isArray(s[q])) s[q] = {};
@@ -430,7 +431,7 @@ function tidy(s) {
   for (const [b, n] of [[s.days, NQ.d], [s.hdays, NQ.h], [s.adays, NQ.d]]) for (const d in b) if (!okDate(d) || !okRec(b[d], n)) delete b[d];
   for (const m in s.runs) {
     const r = s.runs[m]; if (r === null) continue;
-    if (typeof r !== "object" || !okDate(r.date) || (m === "a:" + r.date ? r.mode !== "a" : !["d", "h", "p", "e"].includes(m) || r.mode !== m) || !Array.isArray(r.list) || !r.list.length || !r.list.every(okTag) || !Array.isArray(r.res) || !r.res.every((x) => x && typeof x === "object" && Number.isInteger(x.m) && x.m >= 0)) { delete s.runs[m]; continue; }
+    if (typeof r !== "object" || !okDate(r.date) || (m === "a:" + r.date ? r.mode !== "a" : !["d", "h", "p", "e"].includes(m) || r.mode !== m) || !Array.isArray(r.list) || !r.list.length || (NQL[r.mode] && r.list.length !== NQL[r.mode]) || !r.list.every(okTag) || !Array.isArray(r.res) || !r.res.every((x) => x && typeof x === "object" && Number.isInteger(x.m) && x.m >= 0)) { delete s.runs[m]; continue; }
     if (r.cur != null && (typeof r.cur !== "object" || !Array.isArray(r.cur.wrong))) r.cur = null;
     else if (r.cur) { r.cur.hints = Math.min(2, num(r.cur.hints)); r.cur.wrong = r.cur.wrong.filter((w) => Number.isInteger(w)); }
   }
@@ -536,6 +537,9 @@ $("howto-ok").onclick = () => { save((s) => { s.tut = true; }); const d = $("how
 const at = (k, v) => ({ k: G.keyOf(G.dayMs(k) + Math.floor(v / 1440) * 864e5), m: ((v % 1440) + 1440) % 1440 });
 const whenStr = (k, v) => { const t = at(k, v); return `${G.dateStr(t.k)} ${G.clockStr(t.m)}`; };
 
+// ホームを開いている間は「いまの東京」を描き直す（日付が変わったらホームごと）
+let homeK = null;
+setInterval(() => { const el = app.querySelector(".now"); if (!el || homeK == null) return; if (todayKey() !== homeK) return home(); const t = G.localOf(G.BY.tyo, Date.now()); el.textContent = `いまの東京：${G.dateStr(t.k)} ${G.clockStr(t.m)}（かげは夜の所）`; }, 15000);
 function home() {
   const s = load(), k = todayKey(), done = s.days[k], hdone = s.hdays[k];
   // 最後の1問を当てて結果を見る前に閉じた回は、開き直したら結果へ進める（記録をつける）
@@ -543,6 +547,7 @@ function home() {
   const late = lateDays(s, k), ag = achGot(s).length, nf = foundOf(s).length;
   const rd = s.runs.d && s.runs.d.date === k ? s.runs.d : null, rh = s.runs.h && s.runs.h.date === k ? s.runs.h : null, re = s.runs.e || null;
   const st = streak(s.days), nowT = G.localOf(G.BY.tyo, Date.now());
+  homeK = k;
   app.innerHTML = `
     <h1 class="title">世界の<span>時刻</span></h1>
     <p class="lead" data-a11y-say>時差を考えて、世界の町の時刻を当てる。<br>だれでも同じ1日5問。</p>

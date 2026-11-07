@@ -189,22 +189,26 @@
   }
   const nth = (name, lv, idx) => cycle(name, lv, Math.floor(idx / DPOOL[lv].length))[idx % DPOOL[lv].length];
   const LVS = [0, 0, 1, 1, 2];
-  const PER = [2, 2, 1]; // 1日に使う数
-  function pickDay(name, lvs, k, avoid = []) {
-    const i = dayIdx(k), used = avoid.slice(), out = [], cnt = [0, 0, 0];
-    for (const lv of lvs) {
-      const per = name === "hard" ? 3 : PER[lv], n = DPOOL[lv].length, base = i * per + cnt[lv];
-      // その日に同じ町がもう出ていたら、並びの半分先・4分の1先…の町に替える（次の日の町を先に使わない）
-      const offs = [0, Math.floor(n / 2), Math.floor(n / 4), Math.floor((3 * n) / 4)];
-      for (let j = 1; j < n; j++) offs.push(Math.floor(n / 2) + j);
-      const id = offs.map((o) => nth(name, lv, base + o)).find((x) => !used.includes(x));
-      if (!id) throw new Error("町を選べない");
-      used.push(id); out.push([lv, id]); cnt[lv]++;
+  // 第1回から1日ずつ順に選ぶ（並びの次の町がその日にもう出ていたら、その町は次の日へ回す）。並びのどの町も一度ずつ使うので、1周のうちに同じ町が2回出ない
+  const SIM = {};
+  function simDay(name, lvs, i, avoidOf) {
+    const S = SIM[name] || (SIM[name] = { days: [], ptr: [0, 0, 0], wait: [[], [], []] });
+    while (S.days.length <= i) {
+      const d = S.days.length, used = avoidOf ? avoidOf(d).slice() : [], out = [];
+      for (const lv of lvs) {
+        const w = S.wait[lv], wi = w.findIndex((x) => !used.includes(x));
+        let id = wi >= 0 ? w.splice(wi, 1)[0] : null;
+        for (let g = 0; id == null; g++) { if (g > 4 * DPOOL[lv].length) throw new Error("町を選べない"); const x = nth(name, lv, S.ptr[lv]++); if (used.includes(x)) w.push(x); else id = x; }
+        used.push(id); out.push([lv, id]);
+      }
+      S.days.push(out);
     }
-    return out;
+    return S.days[i];
   }
-  const dailyTags = (k) => pickDay("day", LVS, k).map(([lv, id]) => `${lv}:${id}|d${k}`);
-  const hardTags = (k) => pickDay("hard", [2, 2, 2], k, pickDay("day", LVS, k).map((o) => o[1])).map(([lv, id]) => `${lv}:${id}|h${k}`);
+  const dayPick = (i) => simDay("day", LVS, i);
+  const hardPick = (i) => simDay("hard", [2, 2, 2], i, (d) => dayPick(d).map((o) => o[1]));
+  const dailyTags = (k) => dayPick(dayIdx(k)).map(([lv, id]) => `${lv}:${id}|d${k}`);
+  const hardTags = (k) => hardPick(dayIdx(k)).map(([lv, id]) => `${lv}:${id}|h${k}`);
 
   // 正解のあとに出す説明（やさしい日本語。一文を短く）
   function facts(P) {

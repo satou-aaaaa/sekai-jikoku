@@ -90,6 +90,18 @@ const idOf = (t) => t.split("|")[0].split(":")[1];
     dl.forEach((t, j) => { const x = idOf(t), key = t[0] + x; if (last[key] != null) gap = Math.min(gap, i - last[key]); last[key] = i; used.add(x); });
   }
   check("今日の5問（やさしい2・ふつう2・むずかしい1、同じ町は出さない・その日の日付）と上級（むずかしい3・今日の5問と別）を3年分作れる", bad.length === 0, bad.slice(0, 5).join(","));
+  {
+    // 難しさごとに、並びの1周のうちに同じ町を2回出さない（重なりをよけた町は次の日へ回す。前は半分先の町を先に使い、その町の番でもう一度出ていた）
+    const worst = [];
+    for (const [nm, f] of [["今日", G.dailyTags], ["上級", G.hardTags]]) for (const lv of [0, 1, 2]) {
+      const seq = []; for (let i = 0; i < 365 * 3; i++) for (const t of f(new Date(Date.parse(G.EPOCH) + i * 864e5).toISOString().slice(0, 10))) if (+t[0] === lv) seq.push(idOf(t));
+      if (!seq.length) continue; const n = G.DPOOL[lv].length, last = {}; let gap = Infinity;
+      seq.forEach((x, j) => { if (last[x] != null) gap = Math.min(gap, j - last[x]); last[x] = j; });
+      // 周のつなぎ目では前の周の後ろ半分を後ろへ回すので、同じ町の間はおよそ半周以上（よけて次の日へ回した分だけ少し縮む）
+      if (gap < Math.floor(n / 2) - 3) worst.push(`${nm}${lv}:${gap}/${n}`);
+    }
+    check("今日の5問・上級は、難しさごとに町を1周するまで同じ町を出さない（同じ町の間は半周以上・3年分）", worst.length === 0, worst.join(","));
+  }
   check("3年のうちに全部の町が出る・同じ難しさで同じ町がすぐ戻らない（4日以上あく）", used.size === G.IDS.length && gap >= 4, `${used.size}の町・いちばん短い間 ${gap}日`);
 }
 {
@@ -102,6 +114,7 @@ const idOf = (t) => t.split("|")[0].split(":")[1];
 const html = readFileSync(path.join(root, "index.html"), "utf8"), game = readFileSync(path.join(root, "game.js"), "utf8");
 const ext = [...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map((m) => m[1]).filter((u) => !/^https:\/\/fonts\.googleapis\.com(\/|$)|^https:\/\/ko-fi\.com\/satouaaaaa$|^https:\/\/(www\.iana\.org|www\.nict\.go\.jp|eco\.mtk\.nao\.ac\.jp|eur-lex\.europa\.eu|www\.nist\.gov|www\.naturalearthdata\.com)\//.test(u));
 check("外から読むのは文字（Google Fonts）だけ。スクリプト・広告・解析を入れない（出典のリンクは押したときに開くだけ）", ext.length === 0 && ![...html.matchAll(/<script[^>]+src="([^"]+)"/g)].some((m) => /^https?:/.test(m[1])), ext.join(","));
+check("ホームの「いまの東京」は開いている間も描き直す（日付が変わったらホームごと）", /setInterval\(\(\) => \{ const el = app\.querySelector\("\.now"\)[^\n]*todayKey\(\) !== homeK\) return home\(\)/.test(html));
 check("CSP で通信先を自分だけにしている", /connect-src 'self'/.test(html) && !/connect-src[^;"]*https/.test(html));
 check("Math.random は練習・とことんの並び・日付と回の名札だけ（今日の5問・上級は日付の乱数。game.js には無い）", (html.match(/Math\.random/g) || []).length === 3 && !/Math\.random/.test(game.replace(/^\s*\/\/.*$/gm, "")));
 check("乱数は sort の比較の中で引かない（ブラウザで引く回数が変わる）", !/\.sort\(\s*\([^)]*\)\s*=>[^\n;]*\b(R|rng|rand|Math\.random)\s*\(/.test(html + game));
@@ -332,12 +345,15 @@ try {
   {
     // 引き継ぎコードなどで数の所に文字が入っても、画面に HTML として出さない
     const q = await newPage(); await closeHow(q);
-    await q.evaluate(() => { const s = JSON.parse(localStorage.getItem("jikoku-v1")) || { v: 1 }; s.ebest = '<img id="xss" src=x>'; s.elast = "<b>"; s.dex = { paris: '"><b id="xss2">', bad: 3 }; s.runs = { e: { mode: "e", id: "x", date: "2026-11-08", list: ["0:london|e2026-11-08.a.0"], res: [], miss: '"><i id="xss3">' }, h: { list: "bad", res: [] }, p: { mode: "p", id: "y", date: "2026-11-08", list: ["0:nowhere|p2026-11-08"], res: [] }, d: { mode: "d", id: "z", date: "x", list: ["0:london|d2026-11-08"], res: [] }, a1: { mode: "a", id: "a1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [null] }, x: { mode: "x", id: "x1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [{ m: 0 }] }, h2: { mode: "d", id: "h2", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [] }, t: { mode: "p", id: "t1", date: "2026-11-08", list: ["0:tyo|p2026-11-08"], res: [] }, nd: { mode: "p", id: "t2", date: "2026-11-08", list: ["0:london|pnodate"], res: [] }, "a:2026-11-08": { mode: "a", id: "a3", date: "2026-11-08", list: ["0:london|d2026-11-08", "1:paris|d2026-11-08"], res: [{ m: 0 }], cur: { i: 1, tag: "1:paris|d2026-11-08", wrong: "x", hints: 0 } } }; s.days = { "2026-11-08": { m: "x" }, bad: { m: [0] }, "2026-02-30": { m: [0] }, "2026-11-09": { m: [] }, "2026-11-10": { m: [0, 0, 0] } }; s.hdays = { "2026-11-09": { m: [0, 1, 0] }, "2026-11-10": { m: [0, 0, 0, 0, 0] } }; localStorage.setItem("jikoku-v1", JSON.stringify(s)); });
+    await q.evaluate(() => { const s = JSON.parse(localStorage.getItem("jikoku-v1")) || { v: 1 }; s.ebest = '<img id="xss" src=x>'; s.elast = "<b>"; s.dex = { paris: '"><b id="xss2">', bad: 3 }; s.runs = { e: { mode: "e", id: "x", date: "2026-11-08", list: ["0:london|e2026-11-08.a.0"], res: [], miss: '"><i id="xss3">' }, h: { list: "bad", res: [] }, p: { mode: "p", id: "y", date: "2026-11-08", list: ["0:nowhere|p2026-11-08"], res: [] }, d: { mode: "d", id: "z", date: "x", list: ["0:london|d2026-11-08"], res: [] }, a1: { mode: "a", id: "a1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [null] }, x: { mode: "x", id: "x1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [{ m: 0 }] }, h2: { mode: "d", id: "h2", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [] }, t: { mode: "p", id: "t1", date: "2026-11-08", list: ["0:tyo|p2026-11-08"], res: [] }, nd: { mode: "p", id: "t2", date: "2026-11-08", list: ["0:london|pnodate"], res: [] }, "a:2026-11-08": { mode: "a", id: "a3", date: "2026-11-08", list: ["0:london|d2026-11-08", "1:paris|d2026-11-08", "0:rome|d2026-11-08", "1:seoul|d2026-11-08", "2:taipei|d2026-11-08"], res: [{ m: 0 }], cur: { i: 1, tag: "1:paris|d2026-11-08", wrong: "x", hints: 0 } }, "a:2026-11-09": { mode: "a", id: "a4", date: "2026-11-09", list: ["0:london|d2026-11-09"], res: [] } }; s.days = { "2026-11-08": { m: "x" }, bad: { m: [0] }, "2026-02-30": { m: [0] }, "2026-11-09": { m: [] }, "2026-11-10": { m: [0, 0, 0] } }; s.hdays = { "2026-11-09": { m: [0, 1, 0] }, "2026-11-10": { m: [0, 0, 0, 0, 0] } }; localStorage.setItem("jikoku-v1", JSON.stringify(s)); });
     await q.reload(); await q.waitForTimeout(250);
     const st = await q.evaluate(() => __sj.load());
-    check("記録の形を直す：数の所の文字は0に・知らない町・東京・日付の無い問題・形のちがう途中経過・問題の数と合わない日ごとの記録は捨てる", st.ebest === 0 && st.dex.paris === 0 && !("bad" in st.dex) && !("elast" in st) && ["h", "p", "d", "a1", "x", "h2"].every((k) => !(k in st.runs)) && !("t" in st.runs) && !("nd" in st.runs) && st.runs["a:2026-11-08"] && st.runs["a:2026-11-08"].cur === null && Object.keys(st.days).length === 0 && JSON.stringify(Object.keys(st.hdays)) === '["2026-11-09"]');
+    check("記録の形を直す：数の所の文字は0に・知らない町・東京・日付の無い問題・形のちがう途中経過・問題の数と合わない日ごとの記録・途中経過は捨てる", st.ebest === 0 && st.dex.paris === 0 && !("bad" in st.dex) && !("elast" in st) && ["h", "p", "d", "a1", "x", "h2", "a:2026-11-09"].every((k) => !(k in st.runs)) && !("t" in st.runs) && !("nd" in st.runs) && st.runs["a:2026-11-08"] && st.runs["a:2026-11-08"].cur === null && Object.keys(st.days).length === 0 && JSON.stringify(Object.keys(st.hdays)) === '["2026-11-09"]');
     await q.click("#go-e").catch(() => {}); await q.waitForTimeout(150); await q.click("#quit").catch(() => {}); await q.waitForTimeout(150);
     check("記録の文字を HTML として出さない", await q.locator("#xss, #xss2, #xss3").count() === 0);
+    await q.evaluate(() => { const s = JSON.parse(localStorage.getItem("jikoku-v1")); s.ebest = { toString: 0 }; s.dex = { paris: { valueOf: 1 } }; s.runs = {}; localStorage.setItem("jikoku-v1", JSON.stringify(s)); });
+    const errs = []; q.on("pageerror", (e) => errs.push(e.message)); await q.reload(); await q.waitForTimeout(250);
+    check("数の所に {\"toString\":0} のような物が入っても止まらず、ホームが出る", errs.length === 0 && await q.locator("#go-d").isVisible() && (await q.evaluate(() => __sj.load().ebest)) === 0, errs.join(","));
     await q.context().close();
   }
   {
