@@ -114,7 +114,7 @@
   // 町の「日付 k の m 分」を UTC のミリ秒に（夏時間の切りかわりの近くは問題に使わない）
   function utcOf(c, k, m) { let u = dayMs(k) + m * MIN - c.std * MIN; u = dayMs(k) + m * MIN - offAt(c, u) * MIN; return u; }
   // UTC のミリ秒を町の日付と分に
-  function localOf(c, ms) { const t = ms + offAt(c, ms) * MIN; return { k: keyOf(t), m: Math.round((t % DAY + DAY) % DAY / MIN) }; }
+  function localOf(c, ms) { const t = ms + offAt(c, ms) * MIN; return { k: keyOf(t), m: Math.floor((t % DAY + DAY) % DAY / MIN) }; }
   const calm = (c, ms) => offAt(c, ms - 4 * H) === offAt(c, ms + 4 * H); // 前後4時間で切りかわりが無い
 
   // --- 表し方 ---

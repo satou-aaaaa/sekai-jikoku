@@ -19,7 +19,7 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  const fromCache = () => caches.match(req, { ignoreSearch: true })
+  const fromCache = () => caches.match(req).then((hit) => hit || caches.match(req, { ignoreSearch: true })) // ? 付きは同じ URL を先に探す
     .then((hit) => hit || (req.mode === "navigate" ? caches.match("./index.html") : undefined))
     .catch(() => undefined); // 保存したものを読めなくても、必ず返事を返す（ネットの返事か Response.error()）
   // ネットの返事と保存し直しは、イベントの中で waitUntil に預ける（4秒で保存したものを返したあとに届いても、新しい版を保存できる）
@@ -30,7 +30,7 @@ self.addEventListener("fetch", (e) => {
     let sent = false, slow = 0, cap = 0;
     const send = (r) => { if (!sent) { sent = true; clearTimeout(slow); clearTimeout(cap); resolve(r); } }; // 返したら見張りの時計も止める
     slow = setTimeout(() => fromCache().then((hit) => hit && send(hit)), 4000);
-    cap = setTimeout(() => fromCache().then((hit) => send(hit || Response.error())), 60000); // 保存が無く通信も返らないときも、60秒で必ず返事をする（読み込み中のまま止めない）
+    cap = setTimeout(() => send(Response.error()), 60000); // 通信も保存の読み出しも返らないときも、60秒で必ず返事をする（保存は4秒の所で探し済み。ここでは待たない）
     net.then((res) => {
       // ok の返事は本文を読み終えてから返す（本文の途中で止まったら4秒で保存したものへ切りかえる。shared-workflows incidents/2026-11-07-sw-body-stall.md）
       if (res.ok) return res.clone().arrayBuffer().then(() => send(res), () => fromCache().then((hit) => send(hit || Response.error())));

@@ -97,6 +97,7 @@ svg .pf{fill:var(--green);stroke:#fff;stroke-width:1.2}
 .steps.fine{grid-template-columns:1fr 1fr}
 .msg{margin:0;min-height:22px;text-align:center;font-size:15px;font-weight:700}
 .msg.bad{color:var(--red)}
+.msg.ok{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;min-height:0} /* 正解の知らせは読み上げだけ（見た目は下の正解の箱） */
 .hint{background:var(--paper);border:1.5px dashed var(--green);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.7}
 .verdict{background:var(--paper);border:1.5px solid var(--ink);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 0 #17233a20;animation:up .35s ease-out}
 @keyframes up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
@@ -360,7 +361,8 @@ const freshFirst = (ids, s) => { const seen = (s && s.dex) || {}; return [...mix
 // とことん：やさしい5 → ふつう10 → あとはむずかしい（全部の町を出し切るまで同じ町を出さない）
 function endlessList(s, avoid, hard) {
   const salt = rid(), out = [], used = new Set();
-  const take = (lv, n) => { const ids = freshFirst(G.POOL[lv].filter((id) => !used.has(id)), s); if (avoid != null && ids[0] === avoid) ids.push(ids.shift()); for (const id of ids.slice(0, n)) { used.add(id); out.push([lv, id]); } };
+  // 難しさの切りかわりでも、直前の問題の町を続けて出さない
+  const take = (lv, n) => { const ids = freshFirst(G.POOL[lv].filter((id) => !used.has(id)), s), prev = out.length ? out[out.length - 1][1] : avoid; if (prev != null && ids[0] === prev) ids.push(ids.shift()); for (const id of ids.slice(0, n)) { used.add(id); out.push([lv, id]); } };
   if (!hard) { take(0, 5); take(1, 10); used.clear(); }
   take(2, G.POOL[2].length);
   return out.map(([lv, id], i) => `${lv}:${id}|e${rdate()}.${salt}.${i}`);
@@ -626,12 +628,12 @@ function play() {
       <p class="clk">${G.dateStr(P.k)}<br>${G.clockStr(P.m)}</p>
       <p class="ask">のとき、<b>${esc(B.name)}</b>は何時？</p></div>
     <div class="map" id="map"></div>
-    <div class="dial"><p class="who">${esc(B.name)}の時計</p><p class="val" id="val" aria-live="polite"></p><p class="mv" id="mv"></p></div>
+    <div class="dial"><p class="who">${esc(B.name)}の時計</p><p class="val" id="val" aria-live="polite" data-a11y-say></p><p class="mv" id="mv"></p></div>
     <div class="steps" id="steps">${STEPS.map(([d, t]) => `<button data-d="${d}" aria-label="${esc(B.name)}の時計を${t.replace("−", "マイナス").replace("+", "プラス")}">${t}</button>`).join("")}</div>
     ${P.fine ? `<div class="steps fine" id="fine">${FINE.map(([d, t]) => `<button data-d="${d}" aria-label="${t.replace("−", "マイナス").replace("+", "プラス")}">${t}</button>`).join("")}</div>` : ""}
     <button class="main" id="ok">これで決める</button>
-    <p class="msg" id="msg" role="status" aria-live="polite"></p>
-    <div id="hintbox"></div>
+    <p class="msg" id="msg" role="status" aria-live="polite" data-a11y-say></p>
+    <div id="hintbox" data-a11y-say></div>
     ${hard ? "" : `<button class="sub" id="hint">ヒント</button>`}
     ${run.mode === "e" ? `<button class="sub" id="quit">ここで降りる（${i}問で終える）</button>` : ""}
     <div id="after"></div>`;
@@ -639,7 +641,7 @@ function play() {
   document.querySelectorAll(".steps button").forEach((b) => (b.onclick = () => { if (cur.done) return; cur.v += +b.dataset.d; paint(); }));
   $("ok").onclick = choose;
   if ($("hint")) $("hint").onclick = hint;
-  if ($("quit")) $("quit").onclick = () => { if (cur && cur.done) return; finish(); };
+  if ($("quit")) $("quit").onclick = () => { if (cur && cur.done) return; const r = load().runs.e; if (!r || r.id !== cur.id) { toast("別の画面で先に進んでいます"); return home(); } finish(); }; // 別のタブで始めた新しい回を終わらせない
   paint();
   toTop();
 }
@@ -676,10 +678,10 @@ function choose() {
   const s = save((s) => { const r = s.runs[MODE]; if (!same(r)) return; merge(r); r.res.push({ m: missOf() }); r.cur = null; if (r.mode === "e") { r.miss = (r.miss || 0) + missOf(); s.elast = P.ans; } s.dex[P.ans] = (s.dex[P.ans] || 0) + 1; });
   const r = s.runs[MODE], fin = r && r.mode !== "e" && r.res.length >= r.list.length, st = starsOf(missOf());
   paint();
-  $("msg").className = "msg"; $("msg").textContent = "";
-  $("after").innerHTML = `<div class="verdict" role="status">
-    <div class="hd">✓ 正解！ ${starStr(st)}</div>
-    <p class="mn">${esc(B.name)}は ${esc(whenStr(P.k, P.want))}</p>
+  $("msg").className = "msg ok"; $("msg").textContent = `✓ 正解！ ${B.name}は ${whenStr(P.k, P.want)}。${fin ? "「結果を見る」" : "「次の問題へ」"}で進みます。`; // 前からある知らせの場所で読ませる（入れたばかりの role=status は読まれないことがある）
+  $("after").innerHTML = `<div class="verdict">
+    <div class="hd" data-a11y-say>✓ 正解！ ${starStr(st)}</div>
+    <p class="mn" data-a11y-say>${esc(B.name)}は ${esc(whenStr(P.k, P.want))}</p>
     <ul>${G.facts(P).map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
     <button class="main" id="next">${fin ? "結果を見る" : "次の問題へ"}</button></div>`;
   $("next").onclick = play;

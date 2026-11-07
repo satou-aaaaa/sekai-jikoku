@@ -40,6 +40,7 @@ const idOf = (t) => t.split("|")[0].split(":")[1];
   const fixed = ["Asia/Kolkata", "Asia/Kathmandu", "Asia/Tehran", "Australia/Adelaide", "America/St_Johns", "Pacific/Kiritimati"].every((tz) => G.C.some((c) => c.tz === tz));
   check("30分・15分きざみの町（インド・ネパール・イラン・アデレード・セントジョンズ）と UTC+14（キリティマティ）がある", fixed && G.BY.kathmandu.std === 345 && G.BY.kiritimati.std === 840 && G.BY.tehran.dst === null);
   check("日本はサマータイムをしない・UTC+9", G.BY.tyo.std === 540 && !G.BY.tyo.dst);
+  check("いまの時刻は分を切り捨てる（日本時間 23:59:30 は 23:59 で、0:00 にしない）", G.localOf(G.BY.tyo, Date.parse("2026-11-07T14:59:30Z")).m === 1439 && G.localOf(G.BY.tyo, Date.parse("2026-11-07T14:59:30Z")).k === "2026-11-07");
   // 2026年の切りかわりの日（EU 指令・NIST・IANA tz 2026f）
   const sw = (c, iso, before, after) => G.offAt(G.BY[c], Date.parse(iso) - 1) === before && G.offAt(G.BY[c], Date.parse(iso)) === after;
   check("2026年の夏時間：ロンドン 3/29 1:00 UTC〜10/25・ニューヨーク 3/8 2:00〜11/1・シドニー 10/4・オークランド 9/27 に切りかわる", sw("london", "2026-03-29T01:00:00Z", 0, 60) && sw("london", "2026-10-25T01:00:00Z", 60, 0) && sw("newyork", "2026-03-08T07:00:00Z", -300, -240) && sw("newyork", "2026-11-01T06:00:00Z", -240, -300) && sw("sydney", "2026-10-03T16:00:00Z", 600, 660) && sw("auckland", "2026-09-26T14:00:00Z", 720, 780));
@@ -139,6 +140,8 @@ const errors = [];
 // 「今日」をずらして遊ぶ（第1回の日から日がたっていなくても、あとから・カレンダーを確かめる）。QA_SHIFT_DAYS で変えられる
 const SHIFT = +(process.env.QA_SHIFT_DAYS || 10);
 const TODAY = new Date(Date.now() + SHIFT * 864e5 + 9 * 3600e3).toISOString().slice(0, 10);
+// 検査の間に日本時間の0時をまたがないよう、ブラウザの時刻は TODAY の正午（日本時間）から進める
+const NOON = Date.parse(TODAY + "T03:00:00Z");
 const dayBefore = (n) => new Date(Date.parse(TODAY) - n * 864e5).toISOString().slice(0, 10);
 async function newPage(w = 390, ctx) {
   const c = ctx || await browser.newContext({ viewport: { width: w, height: 800 } });
@@ -150,7 +153,8 @@ async function newPage(w = 390, ctx) {
   await p.goto(url); await p.waitForTimeout(200);
   return p;
 }
-const shift = (c) => c.addInitScript((ms) => { const n = Date.now; Date.now = () => n() + ms; }, SHIFT * 864e5);
+const T0 = Date.now();
+const shift = (c) => c.addInitScript((ms) => { const n = Date.now; Date.now = () => n() + ms; }, NOON - T0);
 const closeHow = async (p) => { if (await p.locator("#howto[open]").count()) await p.click("#howto-ok"); };
 const mem = (p) => p.evaluate(() => JSON.parse(localStorage.getItem("jikoku-v1") || "{}"));
 // 時計のボタンで target（分）まで合わせる
@@ -191,8 +195,10 @@ try {
   }
   check("ホームに世界地図と、今日の5問・とことん・上級・練習・町の手帳のボタン", await p.locator(".hero svg .land").count() === 1 && (await Promise.all(["#go-d", "#go-e", "#go-h", "#go-p", "#go-dex", "#go-cal", "#go-ach"].map(async (q) => (await p.locator(q).count()) === 1 && (await p.locator(q).isVisible()) && (await p.locator(q).isEnabled())))).every(Boolean) && (await p.textContent("#go-d")).includes("今日の5問"));
   {
+    await p.setViewportSize({ width: 390, height: 2400 }); // 縦長の画面（PC の縦置きなど）でも見る
     const b = await p.evaluate(() => [...document.querySelectorAll("#app > *")].map((e) => [e.className, Math.round(e.getBoundingClientRect().height)]));
     check("ホームの題は自分の高さだけ（縦に伸びて大きなすき間を作らない）", b[0][0] === "title" && b[0][1] < 90, JSON.stringify(b[0]));
+    await p.setViewportSize({ width: 390, height: 800 });
   }
 
   // 地図：町の印と名前が地図の中・名前どうしが重ならない。昼と夜のかげ
@@ -250,7 +256,8 @@ try {
     check("正解は ✓・答えの日付と時刻・説明（UTC との差）・★1（まちがい3回）・地図に答えの時刻", (await p.textContent(".verdict .hd")).includes("✓ 正解") && (await p.textContent(".verdict .mn")).includes(G.clockStr(((P0.want % 1440) + 1440) % 1440)) && (await p.textContent(".verdict")).includes("UTC") && (await p.getAttribute(".verdict .stars", "aria-label")) === "星1つ" && (await p.textContent("#map")).includes(G.clock24(((P0.want % 1440) + 1440) % 1440)));
   }
   check("正解したらヒント・ボタン・決めるは隠れる（押せない）", await p.locator("#hint").isHidden() && await p.locator("#ok").isHidden() && await p.locator(".steps button:disabled").count() === 4);
-  check("正解の知らせは .verdict（role=status）", (await p.getAttribute(".verdict", "role")) === "status");
+  check("正解の知らせは前からある #msg（role=status）で読ませる・次の操作も言う", (await p.getAttribute("#msg", "role")) === "status" && /✓ 正解！.*(次の問題へ|結果を見る)/.test(await p.textContent("#msg")) && (await p.getAttribute(".verdict", "role")) === null);
+  check("「読む」の対象に、問題文・時計の値・知らせ・ヒント・正解を入れる", (await p.evaluate(() => ["#val", "#msg", "#hintbox", ".verdict .hd", ".verdict .mn", ".qcard"].every((q) => document.querySelector(q)?.hasAttribute("data-a11y-say")))));
   await p.click("#next");
   await p.click("#hint");
   {
@@ -302,6 +309,8 @@ try {
   {
     const more = await p.evaluate(() => { const l = __sj.endlessList(__sj.load(), "paris", true); return [l.length, l[0], l.every((t) => t[0] === "2")]; });
     check("とことんの続きはむずかしいだけ・つなぎ目で同じ町を続けない", more[0] === G.POOL[2].length && more[2] && idOf(more[1]) !== "paris", JSON.stringify(more));
+    const rep = await p.evaluate(() => { let bad = 0; for (let n = 0; n < 500; n++) { const l = __sj.endlessList(__sj.load(), n % 2 ? "paris" : null); for (let i = 1; i < l.length; i++) { const id = (t) => t.split("|")[0].split(":")[1]; if (id(l[i]) === id(l[i - 1])) bad++; } } return bad; });
+    check("とことんは難しさの切りかわり（ふつう→むずかしい）でも同じ町を続けない（500回）", rep === 0, String(rep));
   }
   await solve(p); await p.click("#next");
   await solve(p, { wrong: 3 }); await p.click("#next");
@@ -309,7 +318,16 @@ try {
   await solve(p); await p.click("#next");
   await p.reload(); await p.waitForTimeout(150);
   check("とことんは開き直すと続きから", (await p.textContent("#go-e")).includes("続きから"));
-  await p.click("#go-e"); await p.click("#quit"); await p.waitForTimeout(150);
+  await p.click("#go-e");
+  {
+    // 別のタブで今の回を終えて新しい回を始めていたら、古い画面の「ここで降りる」はその回を消さない
+    const real = await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("jikoku-v1")); const id = s.runs.e.id; s.runs.e.id = "other"; localStorage.setItem("jikoku-v1", JSON.stringify(s)); return id; });
+    await p.click("#quit"); await p.waitForTimeout(150);
+    check("古い画面の「ここで降りる」は、別のタブで始めた回を終わらせない", (await mem(p)).runs.e?.id === "other" && !(await mem(p)).ebest);
+    await p.evaluate((id) => { const s = JSON.parse(localStorage.getItem("jikoku-v1")); s.runs.e.id = id; localStorage.setItem("jikoku-v1", JSON.stringify(s)); }, real);
+    await p.reload(); await p.waitForTimeout(150); await p.click("#go-e");
+  }
+  await p.click("#quit"); await p.waitForTimeout(150);
   check("「ここで降りる」で終わり、自己ベスト（3問）とまちがい・ヒントの数が出る", (await mem(p)).ebest === 3 && (await p.textContent("#eres")).includes("3問") && (await p.textContent("#ebest")).includes("3回"));
   {
     // 引き継ぎコードなどで数の所に文字が入っても、画面に HTML として出さない
