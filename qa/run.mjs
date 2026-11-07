@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { checkTransfer } from "./transfer-check.mjs";
 import { checkSwStall } from "./sw-check.mjs";
+import vm from "node:vm";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const results = [];
@@ -138,7 +139,18 @@ check("README の URL のすぐ後ろに全角の字を続けない（Link check
   check("PWA：manifest にアイコン2つと名前がある", mf.name === "世界の時刻" && mf.icons.length >= 2 && mf.start_url === "./");
   check("PWA：maskable は字が切れないよう専用の絵（icon-maskable-512.png、中を縮めた絵）を使う", mf.icons.filter((i) => /maskable/.test(i.purpose || "")).every((i) => i.src === "icon-maskable-512.png") && existsSync(path.join(root, "icon-maskable-512.png")));
   const st = await checkSwStall(sw);
-  check("PWA：通信が途中で止まっても、4秒ほどで保存した画面に切りかえる（ふつうの通信はネットの返事のまま。shared-workflows template/qa/sw-check.mjs）", st.ok, `${st.stalled}/${st.normal}`); }
+  check("PWA：通信が途中で止まっても、4秒ほどで保存した画面に切りかえる（ふつうの通信はネットの返事のまま。shared-workflows template/qa/sw-check.mjs）", st.ok, `${st.stalled}/${st.normal}`);
+  {
+    // このゲームの sw.js の戻り方（時間は100分の1）：? 付きは同じ URL の保存を先に使う・通信も保存の読み出しも止まったら60秒で Response.error()
+    const swRun = (match) => { const L = {}; const ctx = { self: { addEventListener: (t, f) => (L[t] = f), location: { origin: "https://x.test" } }, caches: { match, open: async () => ({ put: async () => {} }) },
+      fetch: async () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("half")); } }), { status: 200 }),
+      setTimeout: (f, ms) => setTimeout(f, ms / 100), clearTimeout, URL, Request, Response, Promise };
+      vm.createContext(ctx); vm.runInContext(sw, ctx);
+      return (url, lim) => Promise.race([new Promise((ok) => L.fetch({ request: { method: "GET", url, mode: "navigate" }, waitUntil() {}, respondWith: (pr) => pr.then(ok) })), new Promise((ok) => setTimeout(() => ok("timeout"), lim))]); };
+    const exact = await swRun(async (rq, o) => new Response(o && o.ignoreSearch ? "loose" : String(rq.url).includes("?v=2") ? "exact" : "", { status: 200 }))("https://x.test/index.html?v=2", 200);
+    const t0 = Date.now(), none = await swRun(() => new Promise(() => {}))("https://x.test/index.html", 1500), dt = Date.now() - t0;
+    check("PWA：? 付きの URL は同じ URL の保存を先に使い、通信も保存の読み出しも止まったら60秒で Response.error() を返す", exact !== "timeout" && (await exact.text()) === "exact" && none !== "timeout" && none.type === "error" && dt >= 550 && dt < 1000, `${exact === "timeout" ? exact : "ok"}・${none === "timeout" ? none : none.type}・${dt}ms`);
+  } }
 
 // ---- 3. ブラウザで遊ぶ ----
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".webmanifest": "application/manifest+json" };
