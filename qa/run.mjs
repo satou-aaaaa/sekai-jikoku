@@ -32,6 +32,8 @@ const idOf = (t) => t.split("|")[0].split(":")[1];
 // ---- 1. 町のデータ・時差の決まり（ブラウザを使わない）----
 {
   check(`町は${G.C.length}（東京と、出す町${G.IDS.length}）。id・名前は重ならない`, G.C.length >= 50 && new Set(G.C.map((c) => c.id)).size === G.C.length && new Set(G.C.map((c) => c.name)).size === G.C.length && G.BY.tyo && !G.IDS.includes("tyo"));
+  check("どの町にも「ひとこと」の解説があり、答えの解説に経度の手がかり（15度で1時間）が入る", G.C.every((c) => c.note) && G.IDS.every((id) => G.facts(G.make(`2:${id}|f2027-01-15`)).some((f) => f.includes("15度で1時間"))));
+  check("経度の手がかり：ロンドン UTC+0・ニューヨーク UTC−5・東京 UTC+9", G.lonFact(G.BY.london).includes("UTC+0") && G.lonFact(G.BY.newyork).includes("UTC−5") && G.lonFact(G.BY.tyo).includes("東経140度") && G.lonFact(G.BY.tyo).includes("UTC+9"));
   const bad = G.C.filter((c) => !c.name || !c.country || !(c.area >= 0 && c.area < G.AREAS.length) || !(c.lat > -50 && c.lat < 70) || !(c.lon >= -180 && c.lon <= 180) || !/^[A-Z][A-Za-z_]+\/[A-Za-z_/]+$/.test(c.tz) || c.std % 15 !== 0 || (c.dst && !G.RULES[c.dst]));
   check("どの町にも名前・国・地域・緯度経度・IANA の名前・UTC との差（15分きざみ）がある", bad.length === 0, bad.map((c) => c.id).join(","));
   // 3年分の毎時で、ゲームの計算とブラウザの Intl が同じか（夏時間の始まり・終わりの時刻まで）
