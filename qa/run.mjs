@@ -370,6 +370,15 @@ try {
   await p.click("#quit"); await p.waitForTimeout(150);
   check("「ここで降りる」で終わり、自己ベスト（3問）とまちがい・ヒントの数が出る", (await mem(p)).ebest === 3 && (await p.textContent("#eres")).includes("3問") && (await p.textContent("#ebest")).includes("3回"));
   {
+    // 正解した直後に「ここで降りる」を押しても降りられ、いま解いた問題も数える（shared-workflows incidents/2026-11-17-known-game-bugs-spread.md）
+    const q0 = await newPage(); await closeHow(q0);
+    await q0.click("#go-e"); await solve(q0);
+    const qt = await q0.textContent("#quit");
+    await q0.click("#quit"); await q0.waitForTimeout(150);
+    check("とことん：正解した直後に降りると、ボタンは「1問で終える」で、結果に1問が入る", qt.includes("1問で終える") && (await q0.locator("#eres").count()) === 1 && (await q0.textContent("#eres")).includes("1問"), qt);
+    await q0.context().close();
+  }
+  {
     // 引き継ぎコードなどで数の所に文字が入っても、画面に HTML として出さない
     const q = await newPage(); await closeHow(q);
     await q.evaluate(() => { const s = JSON.parse(localStorage.getItem("jikoku-v1")) || { v: 1 }; s.ebest = '<img id="xss" src=x>'; s.elast = "<b>"; s.dex = { paris: '"><b id="xss2">', bad: 3 }; s.runs = { e: { mode: "e", id: "x", date: "2026-11-08", list: ["0:london|e2026-11-08.a.0"], res: [], miss: '"><i id="xss3">' }, h: { list: "bad", res: [] }, p: { mode: "p", id: "y", date: "2026-11-08", list: ["0:nowhere|p2026-11-08"], res: [] }, d: { mode: "d", id: "z", date: "x", list: ["0:london|d2026-11-08"], res: [] }, a1: { mode: "a", id: "a1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [null] }, x: { mode: "x", id: "x1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [{ m: 0 }] }, h2: { mode: "d", id: "h2", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [] }, t: { mode: "p", id: "t1", date: "2026-11-08", list: ["0:tyo|p2026-11-08"], res: [] }, nd: { mode: "p", id: "t2", date: "2026-11-08", list: ["0:london|pnodate"], res: [] }, "a:2026-11-08": { mode: "a", id: "a3", date: "2026-11-08", list: ["0:london|d2026-11-08", "1:paris|d2026-11-08", "0:rome|d2026-11-08", "1:seoul|d2026-11-08", "2:taipei|d2026-11-08"], res: [{ m: 0 }], cur: { i: 1, tag: "1:paris|d2026-11-08", wrong: "x", hints: 0 } }, "a:2026-11-09": { mode: "a", id: "a4", date: "2026-11-09", list: ["0:london|d2026-11-09"], res: [] } }; s.days = { "2026-11-08": { m: "x" }, bad: { m: [0] }, "2026-02-30": { m: [0] }, "2026-11-09": { m: [] }, "2026-11-10": { m: [0, 0, 0] } }; s.hdays = { "2026-11-09": { m: [0, 1, 0] }, "2026-11-10": { m: [0, 0, 0, 0, 0] } }; localStorage.setItem("jikoku-v1", JSON.stringify(s)); });

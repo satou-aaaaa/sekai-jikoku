@@ -666,7 +666,7 @@ function play() {
   document.querySelectorAll(".steps button").forEach((b) => (b.onclick = () => { if (cur.done) return; cur.v += +b.dataset.d; paint(); }));
   $("ok").onclick = choose;
   if ($("hint")) $("hint").onclick = hint;
-  if ($("quit")) $("quit").onclick = () => { if (cur && cur.done) return; const r = load().runs.e; if (!r || r.id !== cur.id) { toast("別の画面で先に進んでいます"); return home(); } finish(); }; // 別のタブで始めた新しい回を終わらせない
+  if ($("quit")) $("quit").onclick = () => { const r = load().runs.e; if (!r || r.id !== cur.id) { toast("別の画面で先に進んでいます"); return home(); } finish(); }; // 別のタブで始めた新しい回を終わらせない
   paint();
   toTop();
 }
@@ -702,6 +702,7 @@ function choose() {
   // 別のタブで使ったヒント・まちがいも数えてから採点する（keep と同じ合わせ方）
   const s = save((s) => { const r = s.runs[MODE]; if (!same(r)) return; merge(r); r.res.push({ m: missOf() }); r.cur = null; if (r.mode === "e") { r.miss = (r.miss || 0) + missOf(); s.elast = P.ans; } s.dex[P.ans] = (s.dex[P.ans] || 0) + 1; { const nk = P.lv + ":" + P.ans; if (missOf() > 0) s.ng[nk] = (s.ng[nk] || 0) + 1; else delete s.ng[nk]; } });
   const r = s.runs[MODE], fin = r && r.mode !== "e" && r.res.length >= r.list.length, st = starsOf(missOf());
+  if ($("quit") && r && r.mode === "e") $("quit").textContent = `ここで降りる（${r.res.length}問で終える）`; // 正解した直後に降りても、その問題を数える
   paint();
   $("msg").className = "msg ok"; $("msg").textContent = `✓ 正解！ ${B.name}は ${whenStr(P.k, P.want)}。${fin ? "「結果を見る」" : "「次の問題へ」"}で進みます。`; // 前からある知らせの場所で読ませる（入れたばかりの role=status は読まれないことがある）
   $("after").innerHTML = `<div class="verdict">
