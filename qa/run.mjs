@@ -370,6 +370,15 @@ try {
   await p.click("#quit"); await p.waitForTimeout(150);
   check("「ここで降りる」で終わり、自己ベスト（3問）とまちがい・ヒントの数が出る", (await mem(p)).ebest === 3 && (await p.textContent("#eres")).includes("3問") && (await p.textContent("#ebest")).includes("3回"));
   {
+    // 正解した直後に「ここで降りる」を押しても降りられ、いま解いた問題も数える（shared-workflows incidents/2026-11-17-known-game-bugs-spread.md）
+    const q0 = await newPage(); await closeHow(q0);
+    await q0.click("#go-e"); await solve(q0);
+    const qt = await q0.textContent("#quit");
+    await q0.click("#quit"); await q0.waitForTimeout(150);
+    check("とことん：正解した直後に降りると、ボタンは「1問で終える」で、結果に1問が入る", qt.includes("1問で終える") && (await q0.locator("#eres").count()) === 1 && (await q0.textContent("#eres")).includes("1問"), qt);
+    await q0.context().close();
+  }
+  {
     // 引き継ぎコードなどで数の所に文字が入っても、画面に HTML として出さない
     const q = await newPage(); await closeHow(q);
     await q.evaluate(() => { const s = JSON.parse(localStorage.getItem("jikoku-v1")) || { v: 1 }; s.ebest = '<img id="xss" src=x>'; s.elast = "<b>"; s.dex = { paris: '"><b id="xss2">', bad: 3 }; s.runs = { e: { mode: "e", id: "x", date: "2026-11-08", list: ["0:london|e2026-11-08.a.0"], res: [], miss: '"><i id="xss3">' }, h: { list: "bad", res: [] }, p: { mode: "p", id: "y", date: "2026-11-08", list: ["0:nowhere|p2026-11-08"], res: [] }, d: { mode: "d", id: "z", date: "x", list: ["0:london|d2026-11-08"], res: [] }, a1: { mode: "a", id: "a1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [null] }, x: { mode: "x", id: "x1", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [{ m: 0 }] }, h2: { mode: "d", id: "h2", date: "2026-11-08", list: ["0:london|d2026-11-08"], res: [] }, t: { mode: "p", id: "t1", date: "2026-11-08", list: ["0:tyo|p2026-11-08"], res: [] }, nd: { mode: "p", id: "t2", date: "2026-11-08", list: ["0:london|pnodate"], res: [] }, "a:2026-11-08": { mode: "a", id: "a3", date: "2026-11-08", list: ["0:london|d2026-11-08", "1:paris|d2026-11-08", "0:rome|d2026-11-08", "1:seoul|d2026-11-08", "2:taipei|d2026-11-08"], res: [{ m: 0 }], cur: { i: 1, tag: "1:paris|d2026-11-08", wrong: "x", hints: 0 } }, "a:2026-11-09": { mode: "a", id: "a4", date: "2026-11-09", list: ["0:london|d2026-11-09"], res: [] } }; s.days = { "2026-11-08": { m: "x" }, bad: { m: [0] }, "2026-02-30": { m: [0] }, "2026-11-09": { m: [] }, "2026-11-10": { m: [0, 0, 0] } }; s.hdays = { "2026-11-09": { m: [0, 1, 0] }, "2026-11-10": { m: [0, 0, 0, 0, 0] } }; localStorage.setItem("jikoku-v1", JSON.stringify(s)); });
@@ -512,6 +521,27 @@ try {
   const sample = { "jikoku-v1": JSON.stringify({ v: 1, tut: true, days: { "2026-11-07": { m: [0, 1, 0, 0, 2] } }, hdays: {}, adays: {}, dex: { paris: 1, delhi: 1 }, runs: {}, kofi: {}, ach: {}, ebest: 7, t: 1 }) };
   await checkTransfer({ browser, url, game: "sekai-jikoku", sample, check, open: async (pg) => { if (await pg.locator("#howto[open]").count()) await pg.click("#howto-ok"); } });
 } catch (e) { check("引き継ぎの検査が最後まで動く", false, e.message.split("\n")[0]); }
+  try { // 保存できないとき：帯 #savewarn で知らせ、2秒たっても残し、保存できるようになったら消す（黙っていると開き直したとき記録が消える。shared-workflows incidents/2026-11-07-save-failure-silent.md）
+    const c = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await c.addInitScript(() => { window.__origSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function () { throw new Error("QuotaExceededError"); }; });
+    const q = await c.newPage(); await q.goto(url); await q.waitForTimeout(300);
+    if (!(await q.locator("#howto[open]").count())) await q.click("#f-how");
+    await q.click("#howto-ok"); await q.waitForTimeout(100);
+    const n1 = await q.locator("#savewarn").count(); await q.waitForTimeout(2000); const n2 = await q.locator("#savewarn").count();
+    await q.evaluate(() => { Storage.prototype.setItem = window.__origSetItem; });
+    await q.click("#f-how"); await q.click("#howto-ok"); await q.waitForTimeout(100);
+    const n3 = await q.locator("#savewarn").count();
+    check("保存できないときは帯（#savewarn）を1つ出し、2秒たっても残る。保存できるようになると消える", n1 === 1 && n2 === 1 && n3 === 0, [n1, n2, n3].join(","));
+    await c.close();
+  } catch (e) { check("保存できないときは帯（#savewarn）を1つ出し、2秒たっても残る。保存できるようになると消える", false, e.message.split("\n")[0]); }
+  try { // 知らせ（.toast）が出ているあいだも、その下のボタンを押せる（pointer-events:none。2026-11-17 全ゲームの点検）
+    const c = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const q = await c.newPage(); await q.goto(url); await q.waitForTimeout(300);
+    await q.evaluate(() => { const d = document.getElementById("howto"); if (d && d.open) d.close(); toast("知らせの検査"); });
+    const t = await q.evaluate(() => { const e = document.querySelector(".toast"); if (!e) return "知らせが出ない"; const r = e.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return [getComputedStyle(e).pointerEvents, hit && (hit === e || e.contains(hit)) ? "知らせが受ける" : "下が受ける"].join(","); });
+    check("知らせ（.toast）が出ているあいだも、その下を押せる（pointer-events が none）", t === "none,下が受ける", t);
+    await c.close();
+  } catch (e) { check("知らせ（.toast）が出ているあいだも、その下を押せる（pointer-events が none）", false, e.message.split("\n")[0]); }
 await browser.close();
 server.close();
 check("画面のエラーが無い", errors.length === 0, errors.slice(0, 3).join(" | "));
