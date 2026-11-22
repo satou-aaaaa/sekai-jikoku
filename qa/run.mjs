@@ -15,6 +15,7 @@ import vm from "node:vm";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const results = [];
 const check = (name, ok, detail = "") => results.push({ name, ok: !!ok, detail: String(detail).slice(0, 400) });
+const firstClose = async (q) => { if (await q.locator("#howto[open]").count()) await q.click("#howto-ok"); if (await q.locator("#core-coach").count()) { await q.evaluate(() => Core.coach.leave()); await q.waitForTimeout(100); } }; // はじめての練習の吹き出しをやめてホームへ（sync-template の migrateFirstQa が足した）
 const req = createRequire(import.meta.url);
 const G = req(path.join(root, "game.js"));
 globalThis.window = globalThis; req(path.join(root, "map.js"));
@@ -182,7 +183,7 @@ async function newPage(w = 390, ctx) {
 }
 const T0 = Date.now();
 const shift = (c) => c.addInitScript((ms) => { const n = Date.now; Date.now = () => n() + ms; }, NOON - T0);
-const closeHow = async (p) => { if (await p.locator("#howto[open]").count()) await p.click("#howto-ok"); };
+const closeHow = async (p) => { await firstClose(p); };
 const mem = (p) => p.evaluate(() => JSON.parse(localStorage.getItem("jikoku-v1") || "{}"));
 // 時計のボタンで target（分）まで合わせる
 async function dial(p, target) {
@@ -204,7 +205,7 @@ async function solve(p, { wrong = 0 } = {}) {
 
 try {
   const p = await newPage();
-  check("はじめて開くと遊び方が出る", await p.locator("#howto[open]").count() === 1);
+  check("はじめて開くと遊び方が出る", await p.locator("#core-coach").count() === 1);
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await p.reload(); await p.waitForTimeout(200);
   check("遊び方を Esc で閉じたあと、開き直しても遊び方が出ない（shared-workflows #186）", await p.locator("#howto[open]").count() === 0 && (await mem(p)).tut === true);
@@ -213,7 +214,7 @@ try {
     let miss = 0, okNow = 0;
     for (let t = 0; t < 10; t++) {
       const q = await newPage();
-      if (t % 2 === 0) { await q.keyboard.press("Escape"); } else { await q.click("#howto-ok"); }
+      if (t % 2 === 0) { await q.keyboard.press("Escape"); } else { await firstClose(q); }
       const tut = await q.evaluate(() => (JSON.parse(localStorage.getItem("jikoku-v1") || "{}")).tut === true);
       if (tut) okNow++; else miss++;
       await q.context().close();
@@ -519,17 +520,17 @@ try {
 // 引き継ぎコード（shared-workflows template/qa/transfer-check.mjs）
 try {
   const sample = { "jikoku-v1": JSON.stringify({ v: 1, tut: true, days: { "2026-11-07": { m: [0, 1, 0, 0, 2] } }, hdays: {}, adays: {}, dex: { paris: 1, delhi: 1 }, runs: {}, kofi: {}, ach: {}, ebest: 7, t: 1 }) };
-  await checkTransfer({ browser, url, game: "sekai-jikoku", sample, check, open: async (pg) => { if (await pg.locator("#howto[open]").count()) await pg.click("#howto-ok"); } });
+  await checkTransfer({ browser, url, game: "sekai-jikoku", sample, check, open: async (pg) => { await firstClose(pg); } });
 } catch (e) { check("引き継ぎの検査が最後まで動く", false, e.message.split("\n")[0]); }
   try { // 保存できないとき：帯 #savewarn で知らせ、2秒たっても残し、保存できるようになったら消す（黙っていると開き直したとき記録が消える。shared-workflows incidents/2026-11-07-save-failure-silent.md）
     const c = await browser.newContext({ viewport: { width: 390, height: 844 } });
     await c.addInitScript(() => { window.__origSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function () { throw new Error("QuotaExceededError"); }; });
     const q = await c.newPage(); await q.goto(url); await q.waitForTimeout(300);
-    if (!(await q.locator("#howto[open]").count())) await q.click("#f-how");
-    await q.click("#howto-ok"); await q.waitForTimeout(100);
+    if (!(await q.locator("#howto[open]").count())) await firstClose(q).then(() => q.click("#f-how"));
+    await firstClose(q); await q.waitForTimeout(100);
     const n1 = await q.locator("#savewarn").count(); await q.waitForTimeout(2000); const n2 = await q.locator("#savewarn").count();
     await q.evaluate(() => { Storage.prototype.setItem = window.__origSetItem; });
-    await q.click("#f-how"); await q.click("#howto-ok"); await q.waitForTimeout(100);
+    await firstClose(q).then(() => q.click("#f-how")); await firstClose(q); await q.waitForTimeout(100);
     const n3 = await q.locator("#savewarn").count();
     check("保存できないときは帯（#savewarn）を1つ出し、2秒たっても残る。保存できるようになると消える", n1 === 1 && n2 === 1 && n3 === 0, [n1, n2, n3].join(","));
     await c.close();
