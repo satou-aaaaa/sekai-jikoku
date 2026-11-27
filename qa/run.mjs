@@ -116,6 +116,8 @@ const idOf = (t) => t.split("|")[0].split(":")[1];
 
 // ---- 2. ファイルの中身 ----
 const html = readFileSync(path.join(root, "index.html"), "utf8"), game = readFileSync(path.join(root, "game.js"), "utf8");
+// ひな形の写し（<!-- 名前:begin〜end -->）はゲームの言葉ではないので外し、Core.kofi・Core.KOFI は写す前の形にもどして見る（shared-workflows の sync-template が足した）
+const gameOwn = (t) => t.replace(/<!-- ([a-z0-9-]+):begin[\s\S]*?<!-- \1:end -->/g, "").split("${Core.KOFI}").join("https://ko-fi.com/satouaaaaa").replace(/Core\.kofi\(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\)/g, (m, a, b) => "`<p class=\"note kofi\">" + JSON.parse(a) + "、<a href=\"https://ko-fi.com/satouaaaaa\" target=\"_blank\" rel=\"noopener\">Ko-fi でコーヒー1杯の応援</a>をもらえると、" + JSON.parse(b) + "の励みになります（任意・遊ぶのはずっと無料）。</p>`");
 const ext = [...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map((m) => m[1]).filter((u) => !/^https:\/\/fonts\.googleapis\.com(\/|$)|^https:\/\/ko-fi\.com\/satouaaaaa$|^https:\/\/(www\.iana\.org|www\.nict\.go\.jp|eco\.mtk\.nao\.ac\.jp|eur-lex\.europa\.eu|www\.nist\.gov|www\.naturalearthdata\.com)\//.test(u));
 check("外から読むのは文字（Google Fonts）だけ。スクリプト・広告・解析を入れない（出典のリンクは押したときに開くだけ）", ext.length === 0 && ![...html.matchAll(/<script[^>]+src="([^"]+)"/g)].some((m) => /^https?:/.test(m[1])), ext.join(","));
 check("ホームの「いまの東京」は開いている間も描き直す（日付が変わったらホームごと）", /setInterval\(\(\) => \{ const el = app\.querySelector\("\.now"\)[^\n]*todayKey\(\) !== homeK\) return home\(\)/.test(html));
@@ -125,7 +127,7 @@ check("乱数は sort の比較の中で引かない（ブラウザで引く回�
 check("一行の式の途中にコメント // を足さない（行の残りが消える。rosen-hitofude 2026-11-04）", !/;\s*\/\/[^\n]*;\s*\w/.test(game.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n")));
 check("ゲームの答えは自分の表で決める（Intl の tz の版に頼らない。2026年にカナダの一部などが夏時間をやめ、古いブラウザは古い答えを出す）", !/Intl\.DateTimeFormat|toLocaleTimeString|timeZone/.test(game + html.replace(/<!-- a11y:begin[\s\S]*?a11y:end -->/, "")));
 check("画面にお笑いの言葉を入れない（本物っぽく）", !/お笑い|ギャグ|ツッコミ|なんでやねん|（うそ）/.test(html));
-check("チケット・回数制限・🔒で開くモードを入れない", !/🎫|🔒|チケット|あと\d+回|すると開く/.test(html));
+check("チケット・回数制限・🔒で開くモードを入れない", !/🎫|🔒|チケット|あと\d+回|すると開く/.test(gameOwn(html)));
 check("このゲームについて：IANA tz・NICT・国立天文台・EU 指令・NIST・Natural Earth の出典と、旅行では公式の情報を見ること", ["IANA", "NICT", "国立天文台", "2000/84/EC", "NIST", "Natural Earth", "公式の情報"].every((w) => html.includes(w)));
 check("引き継ぎ：transfer.js をゲームの script より前に、このゲームの記録のキーだけで読む", /<script src="transfer\.js" data-game="sekai-jikoku" data-keys="jikoku-v1"><\/script>\s*<\/head>/.test(html) && html.indexOf('src="transfer.js"') < html.indexOf('src="game.js"') && /data-hk/.test(html) && existsSync(path.join(root, "transfer.js")));
 { const og = (k) => (html.match(new RegExp(`<meta (?:property|name)="${k}" content="([^"]+)"`)) || [])[1] || "";
